@@ -1,13 +1,7 @@
-//using ProductService.gRPC.Services;
-
 using ProductService.gRPC.Services;
-//using ProductService.gRPC.Services.Data;
-//using ProductService.gRPC.Services.Services;
-//using ProductService.gRPC.Services.Validators;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using ProductService.gRPC.Data;
-//using ProductService.gRPC.Services;
 using ProductService.gRPC.Validators;
 using Serilog;
 using ECommerceGRPC.ProductService;

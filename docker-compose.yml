@@ -1,73 +1,57 @@
 ﻿version: '3.8'
 
 services:
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: microservices-rabbitmq
-    environment:
-      - RABBITMQ_DEFAULT_USER=admin
-      - RABBITMQ_DEFAULT_PASS=admin123
-    ports:
-      - "5672:5672"    # AMQP
-      - "15672:15672"  # Management UI
-    networks:
-      - microservices-network
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-  # SQL Server 2019
-  sqlserver:
-    image: mcr.microsoft.com/mssql/server:2019-latest
-    container_name: microservices-sqlserver
-    environment:
-      - ACCEPT_EULA=Y
-      - SA_PASSWORD=Password123!
-      - MSSQL_PID=Developer
-    ports:
-      - "1434:1433"
-    volumes:
-      - sqlserver-data:/var/opt/mssql
-    networks:
-      - microservices-network
-    restart: unless-stopped
-  # ⚠️ HEALTHCHECK SIMPLIFICADO - SIN SQLCMD
-    healthcheck:
-      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/1433' || exit 1"]
-      #test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd -Q "SELECT 1" || exit 1
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+  # rabbitmq:
+    # image: rabbitmq:3-management
+    # container_name: microservices-rabbitmq
+    # environment:
+      # - RABBITMQ_DEFAULT_USER=admin
+      # - RABBITMQ_DEFAULT_PASS=admin123
+    # ports:
+      # - "5672:5672"    # AMQP
+      # - "15672:15672"  # Management UI
+    # networks:
+      # - microservices-network
+    # healthcheck:
+      # test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      # interval: 10s
+      # timeout: 5s
+      # retries: 5
+  # # SQL Server 2019
+  # sqlserver:
+    # image: mcr.microsoft.com/mssql/server:2019-latest
+    # container_name: microservices-sqlserver
+    # environment:
+      # - ACCEPT_EULA=Y
+      # - SA_PASSWORD=Password123!
+      # - MSSQL_PID=Developer
+    # ports:
+      # - "1434:1433"
+    # volumes:
+      # - sqlserver-data:/var/opt/mssql
+    # networks:
+      # - microservices-network
+    # restart: unless-stopped
+  # # ⚠️ HEALTHCHECK SIMPLIFICADO - SIN SQLCMD
+    # healthcheck:
+      # test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/1433' || exit 1"]
+      # #test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd -Q "SELECT 1" || exit 1
+      # interval: 10s
+      # timeout: 5s
+      # retries: 5
+      # start_period: 30s
 
-  # RabbitMQ con Management UI
-  #rabbitmq:
-   # image: rabbitmq:3-management
-    #container_name: microservices-rabbitmq
-    #environment:
-     # - RABBITMQ_DEFAULT_USER=admin
-      #- RABBITMQ_DEFAULT_PASS=admin123
-    #ports:
-     # - "5672:5672"    # Para conexión
-     # - "15672:15672"  # Para Management UI
-    #volumes:
-     # - rabbitmq-data:/var/lib/rabbitmq
-    #networks:
-     # - microservices-network
-    #restart: unless-stopped
-
-  # Redis
-  redis:
-    image: redis:7-alpine
-    container_name: microservices-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    networks:
-      - microservices-network
-    restart: unless-stopped
+  # # Redis
+  # redis:
+    # image: redis:7-alpine
+    # container_name: microservices-redis
+    # ports:
+      # - "6379:6379"
+    # volumes:
+      # - redis-data:/data
+    # networks:
+      # - microservices-network
+    # restart: unless-stopped
     
   # ====================================
   # MICROSERVICIOS
@@ -90,27 +74,27 @@ services:
       - RabbitMQ__Password=admin123
     ports:
       - "7001:7001"
-    depends_on:
-      sqlserver:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+    # depends_on:
+      # sqlserver:
+        # condition: service_healthy
+      # rabbitmq:
+        # condition: service_healthy
       #redis:
        # condition: service_healthy
     networks:
-      - microservices-network
+      - infra_microservices-network
     volumes:
       - ./logs:/app/logs
     restart: on-failure
 
-volumes:
-  sqlserver-data:
-    driver: local
-  rabbitmq-data:
-    driver: local
-  redis-data:
-    driver: local
+# volumes:
+  # sqlserver-data:
+    # driver: local
+  # rabbitmq-data:
+    # driver: local
+  # redis-data:
+    # driver: local
 
 networks:
-  microservices-network:
-    driver: bridge
+  infra_microservices-network:
+    external: true

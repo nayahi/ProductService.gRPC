@@ -1,0 +1,8 @@
+# Verificar colas
+docker exec localstack-aws awslocal sqs list-queues
+
+# Verificar topicos
+docker exec localstack-aws awslocal sns list-topics
+
+# Verificar suscripciones
+docker exec localstack-aws awslocal sns list-subscriptions
