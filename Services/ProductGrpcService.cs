@@ -4,6 +4,7 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
 using ProductService.gRPC.Data;
+using ProductService.gRPC.Mappers;
 using ProductService.gRPC.Models;
 
 namespace ProductService.gRPC.Services
@@ -462,5 +463,541 @@ namespace ProductService.gRPC.Services
                 IsActive = product.IsActive
             };
         }
+
+        // ═══════════════════════════════════════════════════════════════════════════════
+        // MÉTODOS DE RESERVA DE STOCK - AGREGAR A ProductGrpcService.cs
+        // ═══════════════════════════════════════════════════════════════════════════════
+        // 
+        // INSTRUCCIONES:
+        // 1. Copiar estos métodos al final de la clase ProductGrpcService (antes del último })
+        // 2. Agregar using para el mapper al inicio del archivo:
+        //    using ProductService.gRPC.Mappers;
+        // 3. Compilar: dotnet build
+        //
+        // ═══════════════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Reserva stock temporalmente para una orden (paso 1 de saga)
+        /// </summary>
+        public override async Task<ReserveStockResponse> ReserveStock(
+            ReserveStockRequest request,
+            ServerCallContext context)
+        {
+            _logger.LogInformation("📦 Reservando stock - ProductId: {ProductId}, Quantity: {Quantity}, OrderId: {OrderId}",
+                request.ProductId, request.Quantity, request.OrderId);
+
+            try
+            {
+                // Buscar producto
+                var product = await _context.Products.FindAsync(request.ProductId);
+                if (product == null)
+                {
+                    _logger.LogWarning("Producto {ProductId} no encontrado", request.ProductId);
+                    return StockReservationMapper.ToReserveStockErrorResponse(
+                        request.ProductId,
+                        request.Quantity,
+                        $"Producto {request.ProductId} no encontrado");
+                }
+
+                // Calcular stock disponible (stock real - reservas activas)
+                var activeReservations = await _context.StockReservations
+                    .Where(r => r.ProductId == request.ProductId && r.Status == ReservationStatus.Reserved)
+                    .SumAsync(r => r.QuantityReserved);
+
+                var availableStock = product.Stock - activeReservations;
+
+                _logger.LogInformation("Stock disponible para Product {ProductId}: Total={Total}, Reservado={Reserved}, Disponible={Available}",
+                    request.ProductId, product.Stock, activeReservations, availableStock);
+
+                // Verificar disponibilidad
+                if (availableStock < request.Quantity)
+                {
+                    _logger.LogWarning("Stock insuficiente - Disponible: {Available}, Solicitado: {Requested}",
+                        availableStock, request.Quantity);
+                    return StockReservationMapper.ToReserveStockErrorResponse(
+                        request.ProductId,
+                        request.Quantity,
+                        $"Stock insuficiente. Disponible: {availableStock}, Solicitado: {request.Quantity}");
+                }
+
+                // Crear reserva
+                var reservation = new StockReservation
+                {
+                    ReservationId = Guid.NewGuid().ToString(),
+                    ProductId = request.ProductId,
+                    OrderId = request.OrderId,
+                    QuantityReserved = request.Quantity,
+                    Status = ReservationStatus.Reserved,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                await _context.StockReservations.AddAsync(reservation);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("✓ Stock reservado exitosamente - ReservationId: {ReservationId}", reservation.ReservationId);
+
+                return StockReservationMapper.ToReserveStockResponse(
+                    reservation,
+                    true,
+                    $"Stock reservado exitosamente. Disponible después de reserva: {availableStock - request.Quantity}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al reservar stock");
+                return StockReservationMapper.ToReserveStockErrorResponse(
+                    request.ProductId,
+                    request.Quantity,
+                    $"Error interno: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Confirma una reserva y descuenta el stock real (commit de saga exitosa)
+        /// </summary>
+        public override async Task<ConfirmReservationResponse> ConfirmReservation(
+            ConfirmReservationRequest request,
+            ServerCallContext context)
+        {
+            _logger.LogInformation("✅ Confirmando reserva - ReservationId: {ReservationId}", request.ReservationId);
+
+            try
+            {
+                // Buscar reserva
+                var reservation = await _context.StockReservations
+                    .Include(r => r.Product)
+                    .FirstOrDefaultAsync(r => r.ReservationId == request.ReservationId);
+
+                if (reservation == null)
+                {
+                    _logger.LogWarning("Reserva {ReservationId} no encontrada", request.ReservationId);
+                    return StockReservationMapper.ToConfirmReservationErrorResponse(
+                        request.ReservationId,
+                        "Reserva no encontrada");
+                }
+
+                // Verificar que esté en estado Reserved
+                if (reservation.Status != ReservationStatus.Reserved)
+                {
+                    _logger.LogWarning("Reserva {ReservationId} no está en estado Reserved (estado actual: {Status})",
+                        request.ReservationId, reservation.Status);
+                    return StockReservationMapper.ToConfirmReservationErrorResponse(
+                        request.ReservationId,
+                        $"La reserva no puede ser confirmada. Estado actual: {reservation.Status}");
+                }
+
+                // Descontar stock real del producto
+                if (reservation.Product == null)
+                {
+                    reservation.Product = await _context.Products.FindAsync(reservation.ProductId);
+                }
+
+                if (reservation.Product!.Stock < reservation.QuantityReserved)
+                {
+                    _logger.LogError("Stock real insuficiente al confirmar - Stock: {Stock}, Reservado: {Reserved}",
+                        reservation.Product.Stock, reservation.QuantityReserved);
+                    return StockReservationMapper.ToConfirmReservationErrorResponse(
+                        request.ReservationId,
+                        "Stock real insuficiente para confirmar reserva");
+                }
+
+                // DESCONTAR STOCK REAL
+                reservation.Product.Stock -= reservation.QuantityReserved;
+                _logger.LogInformation("Stock descontado - Product {ProductId}: Nuevo stock = {NewStock}",
+                    reservation.ProductId, reservation.Product.Stock);
+
+                // Marcar reserva como confirmada
+                reservation.Status = ReservationStatus.Confirmed;
+                reservation.ConfirmedAt = DateTime.UtcNow;
+
+                _context.StockReservations.Update(reservation);
+                _context.Products.Update(reservation.Product);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("✓ Reserva confirmada exitosamente - Stock descontado permanentemente");
+
+                return StockReservationMapper.ToConfirmReservationResponse(
+                    reservation,
+                    true,
+                    $"Reserva confirmada. Stock actual del producto: {reservation.Product.Stock}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al confirmar reserva");
+                return StockReservationMapper.ToConfirmReservationErrorResponse(
+                    request.ReservationId,
+                    $"Error interno: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Libera una reserva (rollback de saga fallida)
+        /// </summary>
+        public override async Task<ReleaseReservationResponse> ReleaseReservation(
+            ReleaseReservationRequest request,
+            ServerCallContext context)
+        {
+            _logger.LogInformation("🔄 Liberando reserva - ReservationId: {ReservationId}, Reason: {Reason}",
+                request.ReservationId, request.Reason);
+
+            try
+            {
+                // Buscar reserva
+                var reservation = await _context.StockReservations
+                    .FirstOrDefaultAsync(r => r.ReservationId == request.ReservationId);
+
+                if (reservation == null)
+                {
+                    _logger.LogWarning("Reserva {ReservationId} no encontrada", request.ReservationId);
+                    return StockReservationMapper.ToReleaseReservationErrorResponse(
+                        request.ReservationId,
+                        "Reserva no encontrada");
+                }
+
+                // Verificar que NO esté ya confirmada (no se puede liberar si ya se descontó el stock)
+                if (reservation.Status == ReservationStatus.Confirmed)
+                {
+                    _logger.LogWarning("No se puede liberar reserva {ReservationId} - Ya fue confirmada",
+                        request.ReservationId);
+                    return StockReservationMapper.ToReleaseReservationErrorResponse(
+                        request.ReservationId,
+                        "La reserva ya fue confirmada y no puede ser liberada");
+                }
+
+                // Si ya fue liberada, retornar éxito (idempotencia)
+                if (reservation.Status == ReservationStatus.Released)
+                {
+                    _logger.LogInformation("Reserva {ReservationId} ya fue liberada previamente", request.ReservationId);
+                    return StockReservationMapper.ToReleaseReservationResponse(
+                        reservation,
+                        true,
+                        "Reserva ya había sido liberada anteriormente");
+                }
+
+                // Marcar reserva como liberada
+                reservation.Status = ReservationStatus.Released;
+                reservation.ReleasedAt = DateTime.UtcNow;
+                reservation.ReleaseReason = request.Reason;
+
+                _context.StockReservations.Update(reservation);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("✓ Reserva liberada exitosamente - Stock nuevamente disponible");
+
+                return StockReservationMapper.ToReleaseReservationResponse(
+                    reservation,
+                    true,
+                    "Reserva liberada. El stock está nuevamente disponible.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al liberar reserva");
+                return StockReservationMapper.ToReleaseReservationErrorResponse(
+                    request.ReservationId,
+                    $"Error interno: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Verifica disponibilidad de stock sin modificar nada
+        /// </summary>
+        public override async Task<CheckAvailabilityResponse> CheckAvailability(
+            CheckAvailabilityRequest request,
+            ServerCallContext context)
+        {
+            _logger.LogInformation("🔍 Verificando disponibilidad - ProductId: {ProductId}, Quantity: {Quantity}",
+                request.ProductId, request.Quantity);
+
+            try
+            {
+                // Buscar producto
+                var product = await _context.Products.FindAsync(request.ProductId);
+                if (product == null)
+                {
+                    _logger.LogWarning("Producto {ProductId} no encontrado", request.ProductId);
+                    return StockReservationMapper.ToCheckAvailabilityErrorResponse(
+                        request.ProductId,
+                        $"Producto {request.ProductId} no encontrado");
+                }
+
+                // Calcular stock reservado activo
+                var activeReservations = await _context.StockReservations
+                    .Where(r => r.ProductId == request.ProductId && r.Status == ReservationStatus.Reserved)
+                    .SumAsync(r => r.QuantityReserved);
+
+                _logger.LogInformation("Disponibilidad - Product {ProductId}: Total={Total}, Reservado={Reserved}, Disponible={Available}",
+                    request.ProductId, product.Stock, activeReservations, product.Stock - activeReservations);
+
+                return StockReservationMapper.ToCheckAvailabilityResponse(
+                    product,
+                    activeReservations,
+                    request.Quantity);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al verificar disponibilidad");
+                return StockReservationMapper.ToCheckAvailabilityErrorResponse(
+                    request.ProductId,
+                    $"Error interno: {ex.Message}");
+            }
+        }
+
+        #region reservation sin mapper
+        ////Reserva de stock para una orden (saga)
+        ///// <summary>
+        ///// Reserva stock temporalmente para una orden (parte de saga)
+        ///// </summary>
+        //public override async Task<ReserveStockResponse> ReserveStock(
+        //    ReserveStockRequest request,
+        //    ServerCallContext context)
+        //{
+        //    _logger.LogInformation("Reservando stock - Product {ProductId}, Quantity: {Quantity}, Order: {OrderId}",
+        //        request.ProductId, request.Quantity, request.OrderId);
+
+        //    try
+        //    {
+        //        var product = await _context.Products
+        //            .FirstOrDefaultAsync(p => p.Id == request.ProductId);
+
+        //        if (product == null)
+        //        {
+        //            return new ReserveStockResponse
+        //            {
+        //                Success = false,
+        //                Message = $"Product {request.ProductId} not found"
+        //            };
+        //        }
+
+        //        // Calcular stock disponible (stock actual - reservas activas)
+        //        var activeReservations = await _context.StockReservations
+        //            .Where(r => r.ProductId == request.ProductId && r.Status == ReservationStatus.Reserved)
+        //            .SumAsync(r => r.QuantityReserved);
+
+        //        var availableStock = product.Stock - activeReservations;
+
+        //        if (availableStock < request.Quantity)
+        //        {
+        //            _logger.LogWarning("Stock insuficiente - Product {ProductId}, Disponible: {Available}, Solicitado: {Requested}",
+        //                request.ProductId, availableStock, request.Quantity);
+
+        //            return new ReserveStockResponse
+        //            {
+        //                Success = false,
+        //                ProductId = request.ProductId,
+        //                RemainingStock = availableStock,
+        //                Message = $"Insufficient stock. Available: {availableStock}, Requested: {request.Quantity}"
+        //            };
+        //        }
+
+        //        // Crear reserva
+        //        var reservation = new StockReservation
+        //        {
+        //            ReservationId = Guid.NewGuid().ToString(),
+        //            ProductId = request.ProductId,
+        //            OrderId = request.OrderId,
+        //            QuantityReserved = request.Quantity,
+        //            Status = ReservationStatus.Reserved,
+        //            CreatedAt = DateTime.UtcNow
+        //        };
+
+        //        await _context.StockReservations.AddAsync(reservation);
+        //        await _context.SaveChangesAsync();
+
+        //        _logger.LogInformation("✓ Stock reservado exitosamente - ReservationId: {ReservationId}, Product: {ProductId}, Quantity: {Quantity}",
+        //            reservation.ReservationId, request.ProductId, request.Quantity);
+
+        //        return new ReserveStockResponse
+        //        {
+        //            Success = true,
+        //            ReservationId = reservation.ReservationId,
+        //            ProductId = request.ProductId,
+        //            QuantityReserved = request.Quantity,
+        //            RemainingStock = availableStock - request.Quantity,
+        //            Message = "Stock reserved successfully"
+        //        };
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "Error al reservar stock para Product {ProductId}", request.ProductId);
+        //        return new ReserveStockResponse
+        //        {
+        //            Success = false,
+        //            Message = $"Internal error: {ex.Message}"
+        //        };
+        //    }
+        //}
+
+        ///// <summary>
+        ///// Confirma una reserva (commit de saga exitosa)
+        ///// </summary>
+        //public override async Task<ReservationResponse> ConfirmReservation(
+        //    ConfirmReservationRequest request,
+        //    ServerCallContext context)
+        //{
+        //    _logger.LogInformation("Confirmando reserva {ReservationId}", request.ReservationId);
+
+        //    try
+        //    {
+        //        var reservation = await _context.StockReservations
+        //            .Include(r => r.Product)
+        //            .FirstOrDefaultAsync(r => r.ReservationId == request.ReservationId);
+
+        //        if (reservation == null)
+        //        {
+        //            return new ReservationResponse
+        //            {
+        //                Success = false,
+        //                Message = $"Reservation {request.ReservationId} not found"
+        //            };
+        //        }
+
+        //        if (reservation.Status != ReservationStatus.Reserved)
+        //        {
+        //            return new ReservationResponse
+        //            {
+        //                Success = false,
+        //                Message = $"Reservation already {reservation.Status}"
+        //            };
+        //        }
+
+        //        // Descontar del stock real
+        //        if (reservation.Product != null)
+        //        {
+        //            reservation.Product.Stock -= reservation.QuantityReserved;
+        //            _context.Products.Update(reservation.Product);
+        //        }
+
+        //        // Marcar reserva como confirmada
+        //        reservation.Status = ReservationStatus.Confirmed;
+        //        reservation.ConfirmedAt = DateTime.UtcNow;
+        //        _context.StockReservations.Update(reservation);
+
+        //        await _context.SaveChangesAsync();
+
+        //        _logger.LogInformation("✓ Reserva confirmada - ReservationId: {ReservationId}, Product: {ProductId}, Quantity: {Quantity}",
+        //            request.ReservationId, reservation.ProductId, reservation.QuantityReserved);
+
+        //        return new ReservationResponse
+        //        {
+        //            Success = true,
+        //            Message = "Reservation confirmed and stock deducted"
+        //        };
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "Error al confirmar reserva {ReservationId}", request.ReservationId);
+        //        return new ReservationResponse
+        //        {
+        //            Success = false,
+        //            Message = $"Internal error: {ex.Message}"
+        //        };
+        //    }
+        //}
+
+        ///// <summary>
+        ///// Libera una reserva (rollback de saga fallida)
+        ///// </summary>
+        //public override async Task<ReservationResponse> ReleaseReservation(
+        //    ReleaseReservationRequest request,
+        //    ServerCallContext context)
+        //{
+        //    _logger.LogInformation("Liberando reserva {ReservationId}, Razón: {Reason}",
+        //        request.ReservationId, request.Reason);
+
+        //    try
+        //    {
+        //        var reservation = await _context.StockReservations
+        //            .FirstOrDefaultAsync(r => r.ReservationId == request.ReservationId);
+
+        //        if (reservation == null)
+        //        {
+        //            return new ReservationResponse
+        //            {
+        //                Success = false,
+        //                Message = $"Reservation {request.ReservationId} not found"
+        //            };
+        //        }
+
+        //        if (reservation.Status != ReservationStatus.Reserved)
+        //        {
+        //            return new ReservationResponse
+        //            {
+        //                Success = false,
+        //                Message = $"Reservation already {reservation.Status}"
+        //            };
+        //        }
+
+        //        // Marcar reserva como liberada
+        //        reservation.Status = ReservationStatus.Released;
+        //        reservation.ReleasedAt = DateTime.UtcNow;
+        //        reservation.ReleaseReason = request.Reason;
+        //        _context.StockReservations.Update(reservation);
+
+        //        await _context.SaveChangesAsync();
+
+        //        _logger.LogInformation("✓ Reserva liberada - ReservationId: {ReservationId}, Razón: {Reason}",
+        //            request.ReservationId, request.Reason);
+
+        //        return new ReservationResponse
+        //        {
+        //            Success = true,
+        //            Message = "Reservation released successfully"
+        //        };
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "Error al liberar reserva {ReservationId}", request.ReservationId);
+        //        return new ReservationResponse
+        //        {
+        //            Success = false,
+        //            Message = $"Internal error: {ex.Message}"
+        //        };
+        //    }
+        //}
+
+        ///// <summary>
+        ///// Verifica disponibilidad de stock
+        ///// </summary>
+        //public override async Task<AvailabilityResponse> CheckAvailability(
+        //    CheckAvailabilityRequest request,
+        //    ServerCallContext context)
+        //{
+        //    try
+        //    {
+        //        var product = await _context.Products
+        //            .AsNoTracking()
+        //            .FirstOrDefaultAsync(p => p.Id == request.ProductId);
+
+        //        if (product == null)
+        //        {
+        //            return new AvailabilityResponse
+        //            {
+        //                Available = false,
+        //                CurrentStock = 0,
+        //                ReservedStock = 0,
+        //                AvailableStock = 0
+        //            };
+        //        }
+
+        //        var reservedStock = await _context.StockReservations
+        //            .Where(r => r.ProductId == request.ProductId && r.Status == ReservationStatus.Reserved)
+        //            .SumAsync(r => r.QuantityReserved);
+
+        //        var availableStock = product.Stock - reservedStock;
+
+        //        return new AvailabilityResponse
+        //        {
+        //            Available = availableStock >= request.Quantity,
+        //            CurrentStock = product.Stock,
+        //            ReservedStock = reservedStock,
+        //            AvailableStock = availableStock
+        //        };
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "Error al verificar disponibilidad Product {ProductId}", request.ProductId);
+        //        throw new RpcException(new Status(StatusCode.Internal, $"Internal error: {ex.Message}"));
+        //    }
+        //}
+        #endregion reservation sin mappers
     }
 }

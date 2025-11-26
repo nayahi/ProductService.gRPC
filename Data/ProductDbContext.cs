@@ -17,6 +17,7 @@ namespace ProductService.gRPC.Data
         /// Colección de productos en la base de datos
         /// </summary>
         public DbSet<Product> Products { get; set; } = null!;
+        public DbSet<StockReservation> StockReservations { get; set; }
 
         /// <summary>
         /// Configuración del modelo de datos
@@ -71,6 +72,46 @@ namespace ProductService.gRPC.Data
                 // Validación a nivel de base de datos
                 //entity.HasCheckConstraint("CK_Products_Price", "[Price] >= 0");
                 //entity.HasCheckConstraint("CK_Products_Stock", "[Stock] >= 0");
+
+                // Configuración de StockReservation
+                modelBuilder.Entity<StockReservation>(entity =>
+                {
+                    entity.ToTable("StockReservations");
+
+                    entity.HasKey(e => e.ReservationId);
+
+                    entity.Property(e => e.ReservationId)
+                        .HasMaxLength(50)
+                        .IsRequired();
+
+                    entity.Property(e => e.ProductId).IsRequired();
+                    entity.Property(e => e.OrderId).IsRequired();
+                    entity.Property(e => e.QuantityReserved).IsRequired();
+
+                    entity.Property(e => e.Status)
+                        .HasMaxLength(20)
+                        .IsRequired()
+                        .HasDefaultValue("Reserved");
+
+                    entity.Property(e => e.CreatedAt)
+                        .IsRequired()
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    entity.Property(e => e.ReleaseReason)
+                        .HasMaxLength(500);
+
+                    // Relación con Product
+                    entity.HasOne(e => e.Product)
+                        .WithMany()
+                        .HasForeignKey(e => e.ProductId)
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    // Índices
+                    entity.HasIndex(e => e.ProductId);
+                    entity.HasIndex(e => e.OrderId);
+                    entity.HasIndex(e => e.Status);
+                    entity.HasIndex(e => new { e.ProductId, e.Status });
+                });
             });
         }
     }

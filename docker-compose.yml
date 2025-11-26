@@ -66,7 +66,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       # ⚠️ IMPORTANTE: Dentro de Docker, usa 'sqlserver' no 'localhost'
-      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=ECommerceGRPC;User Id=sa;Password=Password123!;TrustServerCertificate=True;MultipleActiveResultSets=true
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=ECommerceGRPCProducts;User Id=sa;Password=Password123!;TrustServerCertificate=True;MultipleActiveResultSets=true
       - ASPNETCORE_URLS=http://+:7001
       # ⚠️ IMPORTANTE: Dentro de Docker, usa 'rabbitmq' no 'localhost'
       - RabbitMQ__Host=rabbitmq

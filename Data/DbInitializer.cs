@@ -166,6 +166,166 @@ namespace ProductService.gRPC.Data
                 await context.SaveChangesAsync();
 
                 logger.LogInformation($"Base de datos inicializada exitosamente con {products.Count} productos.");
+
+                // ═══════════════════════════════════════════════════════════
+                // RESERVAS DE STOCK DE PRUEBA
+                // ═══════════════════════════════════════════════════════════
+
+                var reservations = new List<StockReservation>
+                {
+                    // RESERVA 1: Laptop - RESERVED (activa, esperando confirmación)
+                    new StockReservation
+                    {
+                        ReservationId = Guid.NewGuid().ToString(),
+                        ProductId = 1, // Laptop Dell XPS 15
+                        OrderId = 100,
+                        QuantityReserved = 2,
+                        Status = ReservationStatus.Reserved,
+                        CreatedAt = DateTime.UtcNow.AddHours(-2),
+                        ConfirmedAt = null,
+                        ReleasedAt = null,
+                        ReleaseReason = null
+                    },
+
+                    // RESERVA 2: iPhone - CONFIRMED (completada, stock descontado)
+                    new StockReservation
+                    {
+                        ReservationId = Guid.NewGuid().ToString(),
+                        ProductId = 2, // iPhone 15 Pro
+                        OrderId = 101,
+                        QuantityReserved = 3,
+                        Status = ReservationStatus.Confirmed,
+                        CreatedAt = DateTime.UtcNow.AddDays(-2),
+                        ConfirmedAt = DateTime.UtcNow.AddDays(-2).AddMinutes(5),
+                        ReleasedAt = null,
+                        ReleaseReason = null
+                    },
+
+                    // RESERVA 3: Audífonos Sony - RELEASED (liberada por cancelación)
+                    new StockReservation
+                    {
+                        ReservationId = Guid.NewGuid().ToString(),
+                        ProductId = 3, // Sony WH-1000XM5
+                        OrderId = 102,
+                        QuantityReserved = 5,
+                        Status = ReservationStatus.Released,
+                        CreatedAt = DateTime.UtcNow.AddDays(-3),
+                        ConfirmedAt = null,
+                        ReleasedAt = DateTime.UtcNow.AddDays(-3).AddHours(1),
+                        ReleaseReason = "Payment failed - Insufficient funds"
+                    },
+
+                    // RESERVA 4: Cafetera - RESERVED (activa reciente)
+                    new StockReservation
+                    {
+                        ReservationId = Guid.NewGuid().ToString(),
+                        ProductId = 6, // Cafetera Keurig
+                        OrderId = 103,
+                        QuantityReserved = 1,
+                        Status = ReservationStatus.Reserved,
+                        CreatedAt = DateTime.UtcNow.AddMinutes(-30),
+                        ConfirmedAt = null,
+                        ReleasedAt = null,
+                        ReleaseReason = null
+                    },
+
+                    // RESERVA 5: Bicicleta - CONFIRMED (stock crítico)
+                    new StockReservation
+                    {
+                        ReservationId = Guid.NewGuid().ToString(),
+                        ProductId = 8, // Bicicleta Trek
+                        OrderId = 104,
+                        QuantityReserved = 3,
+                        Status = ReservationStatus.Confirmed,
+                        CreatedAt = DateTime.UtcNow.AddDays(-1),
+                        ConfirmedAt = DateTime.UtcNow.AddDays(-1).AddMinutes(10),
+                        ReleasedAt = null,
+                        ReleaseReason = null
+                    },
+
+                    // RESERVA 6: LEGO - RESERVED (producto con poco stock)
+                    new StockReservation
+                    {
+                        ReservationId = Guid.NewGuid().ToString(),
+                        ProductId = 12, // LEGO Millennium Falcon
+                        OrderId = 105,
+                        QuantityReserved = 1,
+                        Status = ReservationStatus.Reserved,
+                        CreatedAt = DateTime.UtcNow.AddHours(-5),
+                        ConfirmedAt = null,
+                        ReleasedAt = null,
+                        ReleaseReason = null
+                    },
+
+                    // RESERVA 7: Laptop - RELEASED (timeout de pago)
+                    new StockReservation
+                    {
+                        ReservationId = Guid.NewGuid().ToString(),
+                        ProductId = 1, // Laptop Dell XPS 15
+                        OrderId = 106,
+                        QuantityReserved = 1,
+                        Status = ReservationStatus.Released,
+                        CreatedAt = DateTime.UtcNow.AddDays(-5),
+                        ConfirmedAt = null,
+                        ReleasedAt = DateTime.UtcNow.AddDays(-5).AddMinutes(30),
+                        ReleaseReason = "Payment timeout - Order cancelled by system"
+                    },
+
+                    // RESERVA 8: Jeans - CONFIRMED (orden completada)
+                    new StockReservation
+                    {
+                        ReservationId = Guid.NewGuid().ToString(),
+                        ProductId = 5, // Jeans Levi's
+                        OrderId = 107,
+                        QuantityReserved = 10,
+                        Status = ReservationStatus.Confirmed,
+                        CreatedAt = DateTime.UtcNow.AddDays(-4),
+                        ConfirmedAt = DateTime.UtcNow.AddDays(-4).AddMinutes(3),
+                        ReleasedAt = null,
+                        ReleaseReason = null
+                    }
+                };
+
+                await context.StockReservations.AddRangeAsync(reservations);
+                await context.SaveChangesAsync();
+
+                logger.LogInformation($"✅ {reservations.Count} reservas de stock agregadas");
+
+                // ═══════════════════════════════════════════════════════════
+                // RESUMEN DE DATOS
+                // ═══════════════════════════════════════════════════════════
+
+                logger.LogInformation("═════════════════════════════════════════════");
+                logger.LogInformation("DATOS DE PRUEBA INICIALIZADOS EXITOSAMENTE");
+                logger.LogInformation("═════════════════════════════════════════════");
+                logger.LogInformation($"✓ Productos: {products.Count}");
+                logger.LogInformation($"✓ Reservas Activas (Reserved): {reservations.Count(r => r.Status == ReservationStatus.Reserved)}");
+                logger.LogInformation($"✓ Reservas Confirmadas (Confirmed): {reservations.Count(r => r.Status == ReservationStatus.Confirmed)}");
+                logger.LogInformation($"✓ Reservas Liberadas (Released): {reservations.Count(r => r.Status == ReservationStatus.Released)}");
+                logger.LogInformation("═════════════════════════════════════════════");
+
+                // Mostrar stock disponible de productos con reservas
+                var productsWithReservations = new[] { 1, 2, 3, 6, 8, 12, 5 };
+                logger.LogInformation("");
+                logger.LogInformation("STOCK DISPONIBLE (Stock - Reservas Activas):");
+
+                foreach (var productId in productsWithReservations.Distinct())
+                {
+                    var product = products.FirstOrDefault(p => p.Id == productId);
+                    if (product != null)
+                    {
+                        var activeReservations = reservations
+                            .Where(r => r.ProductId == productId && r.Status == ReservationStatus.Reserved)
+                            .Sum(r => r.QuantityReserved);
+
+                        var availableStock = product.Stock - activeReservations;
+
+                        logger.LogInformation($"  • {product.Name}: Stock={product.Stock}, Reservado={activeReservations}, Disponible={availableStock}");
+                    }
+                }
+
+                logger.LogInformation("");
+
             }
             catch (Exception ex)
             {
