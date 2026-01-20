@@ -1,29 +1,25 @@
 version: '3.8'
 
 services:
+# LocalStack - Simula servicios AWS localmente
   localstack:
     image: localstack/localstack:latest
     container_name: localstack-aws
     ports:
       - "4566:4566"
-      - "4510-4559:4510-4559"  # Servicios externos
+      - "4571:4571"
     environment:
-      - SERVICES=sqs,sns,s3,lambda,iam,cloudwatch,logs,sts
+      - SERVICES=sqs,sns,cloudwatch
       - DEBUG=1
-      - LAMBDA_EXECUTOR=docker-reuse
-      - DOCKER_HOST=unix:///var/run/docker.sock
-      - LAMBDA_REMOTE_DOCKER=0
       - PERSISTENCE=0
       - AWS_DEFAULT_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
     volumes:
       - "localstack-data:/var/lib/localstack"
-      - "/var/run/docker.sock:/var/run/docker.sock"
       #- "./init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh"
     networks:
-      - microservices-network   
-       
+      - microservices-network      
   rabbitmq:
     image: rabbitmq:3-management
     container_name: microservices-rabbitmq

@@ -1,0 +1,61 @@
+$PSVersionTable.PSVersion
+winget install --id Microsoft.Powershell --source winget # actualizer a la version 7
+
+
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+sino funciona entonces
+Unblock-File .\Setup-LocalStack-Fixed-PS7.ps1
+.\Setup-LocalStack-Fixed-PS7.ps1
+
+Instalar la extension en visual studio: AWS Toolkit for Visual Studio With Q (https://docs.aws.amazon.com/toolkit-for-visual-studio/latest/user-guide/lambda-index.html) descargar en https://marketplace.visualstudio.com/items?itemName=AmazonWebServices.AWSToolkitforVisualStudio2022
+
+
+# Listar funciones Lambda
+docker exec localstack-aws awslocal lambda list-functions
+
+# Ver detalles de OrderProcessor
+docker exec localstack-aws awslocal lambda get-function --function-name OrderProcessor
+docker exec localstack-aws awslocal lambda get-function --function-name EmailNotifier
+
+# Ver event source mappings
+docker exec localstack-aws awslocal lambda list-event-source-mappings
+
+Ejecutar demosqssns
+
+o 
+.\EnviarALambda.ps1
+
+ver logs de la lambda
+docker exec localstack-aws awslocal logs describe-log-streams --log-group-name /aws/lambda/OrderProcessor
+# Usar el log stream más reciente (el segundo):
+docker exec localstack-aws awslocal logs get-log-events --log-group-name /aws/lambda/OrderProcessor --log-stream-name '2026/01/20/[$LATEST]e63463352a82864c86c32f37db5630a2' --start-from-head
+
+
+docker exec localstack-aws awslocal logs describe-log-streams --log-group-name /aws/lambda/EmailNotifier
+docker exec localstack-aws awslocal logs get-log-events --log-group-name /aws/lambda/EmailNotifier --log-stream-name '2026/01/20/[$LATEST]96518e8abd800b7b75bc77a6fa695394' --start-from-head
+
+O usar
+.\VerLogs.ps1
+.\VerLogs.ps1 -FunctionName EmailNotifier
+O usar
+https://app.localstack.cloud/
+
+----------En caso que no funcione algo o haya error en una lambda limpiar y redesplegar
+
+# Limpiar builds anteriores:
+cd Lambdas\OrderProcessor.Lambda
+dotnet clean
+Remove-Item -Recurse bin, obj -Force
+
+cd ..\EmailNotifier.Lambda
+dotnet clean
+Remove-Item -Recurse bin, obj -Force
+
+# Redesplegar:
+cd ..
+.\Deploy-Lambdas.ps1
+
+----
+
+https://calculator.aws/#/

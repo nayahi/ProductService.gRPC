@@ -110,87 +110,6 @@ docker exec localstack-aws awslocal sqs set-queue-attributes --queue-url http://
 Write-Host "DLQ configurada exitosamente (max 3 intentos)" -ForegroundColor Green
 
 Write-Host "`n=========================================" -ForegroundColor Cyan
-Write-Host "Configurando Lambda Runtime" -ForegroundColor Cyan
-Write-Host "=========================================" -ForegroundColor Cyan
-
-# Crear rol de ejecución para Lambdas
-Write-Host "Creando rol IAM para Lambdas..." -ForegroundColor Yellow
-
-$assumeRolePolicy = @'
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Principal": {
-                "Service": "lambda.amazonaws.com"
-            },
-            "Action": "sts:AssumeRole"
-        }
-    ]
-}
-'@
-
-# Guardar política en archivo temporal
-$policyPath = [System.IO.Path]::GetTempFileName()
-$assumeRolePolicy | Out-File -FilePath $policyPath -Encoding UTF8 -NoNewline
-
-try {
-    # Copiar al contenedor y crear rol
-    docker cp $policyPath localstack-aws:/tmp/assume-role-policy.json
-    
-    docker exec localstack-aws awslocal iam create-role `
-        --role-name lambda-execution-role `
-        --assume-role-policy-document file:///tmp/assume-role-policy.json
-    
-    Write-Host "✅ Rol IAM creado: lambda-execution-role" -ForegroundColor Green
-} catch {
-    Write-Host "⚠️  Rol IAM ya existe o hubo error (puede ser normal)" -ForegroundColor Yellow
-} finally {
-    Remove-Item $policyPath -Force -ErrorAction SilentlyContinue
-}
-
-# Adjuntar política básica de Lambda
-Write-Host "Adjuntando políticas de ejecución..." -ForegroundColor Yellow
-try {
-    docker exec localstack-aws awslocal iam attach-role-policy `
-        --role-name lambda-execution-role `
-        --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-    
-    Write-Host "✅ Política AWSLambdaBasicExecutionRole adjuntada" -ForegroundColor Green
-} catch {
-    Write-Host "⚠️  Política ya adjuntada (puede ser normal)" -ForegroundColor Yellow
-}
-
-# Adjuntar política de SQS
-try {
-    docker exec localstack-aws awslocal iam attach-role-policy `
-        --role-name lambda-execution-role `
-        --policy-arn arn:aws:iam::aws:policy/AmazonSQSFullAccess
-    
-    Write-Host "✅ Política AmazonSQSFullAccess adjuntada" -ForegroundColor Green
-} catch {
-    Write-Host "⚠️  Política ya adjuntada (puede ser normal)" -ForegroundColor Yellow
-}
-
-# Adjuntar política de S3 (para futuros labs de Semana 1)
-try {
-    docker exec localstack-aws awslocal iam attach-role-policy `
-        --role-name lambda-execution-role `
-        --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
-    
-    Write-Host "✅ Política AmazonS3FullAccess adjuntada" -ForegroundColor Green
-} catch {
-    Write-Host "⚠️  Política ya adjuntada (puede ser normal)" -ForegroundColor Yellow
-}
-
-Write-Host "`nRol IAM configurado exitosamente para Lambdas" -ForegroundColor Green
-
-# Nota para deployment
-Write-Host "`nℹ️  Las funciones Lambda se desplegarán usando el script:" -ForegroundColor Cyan
-Write-Host "   Lambdas/Deploy-Lambdas.ps1" -ForegroundColor Yellow
-
-Write-Host "`n=========================================" -ForegroundColor Cyan
 Write-Host "VERIFICACION DE RECURSOS CREADOS" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
 
@@ -203,24 +122,7 @@ docker exec localstack-aws awslocal sns list-topics
 Write-Host "`nSuscripciones SNS:" -ForegroundColor Yellow
 docker exec localstack-aws awslocal sns list-subscriptions
 
-Write-Host "`n👤 Roles IAM:" -ForegroundColor Yellow
-docker exec localstack-aws awslocal iam list-roles --query 'Roles[?RoleName==`lambda-execution-role`].[RoleName, Arn]' --output table
-
-Write-Host "`n📋 Políticas adjuntas al rol Lambda:" -ForegroundColor Yellow
-docker exec localstack-aws awslocal iam list-attached-role-policies --role-name lambda-execution-role --output table
-
 Write-Host "`n=========================================" -ForegroundColor Green
 Write-Host "LocalStack configurado y listo para usar!" -ForegroundColor Green
 Write-Host "Endpoint: http://localhost:4566" -ForegroundColor Green
-Write-Host "📍 Región configurada: us-east-1" -ForegroundColor Cyan
-Write-Host "=========================================" -ForegroundColor Green
-
-Write-Host "`n🚀 PRÓXIMOS PASOS:" -ForegroundColor Yellow
-Write-Host "   1. Implementar Lambdas (carpeta Lambdas/)" -ForegroundColor White
-Write-Host "   2. Ejecutar: Lambdas/Deploy-Lambdas.ps1" -ForegroundColor White
-Write-Host "   3. Probar con: dotnet run (demo SQS/SNS)" -ForegroundColor White
-Write-Host "   4. Ver logs: awslocal logs tail /aws/lambda/<FunctionName>" -ForegroundColor White
-
-Write-Host "`n=========================================" -ForegroundColor Green
-Write-Host "Setup completado - Listo para desarrollo!" -ForegroundColor Green
 Write-Host "=========================================" -ForegroundColor Green
