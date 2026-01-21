@@ -1,3 +1,5 @@
+--Comandos utiles para manejo de lambdas
+
 $PSVersionTable.PSVersion
 winget install --id Microsoft.Powershell --source winget # actualizer a la version 7
 
