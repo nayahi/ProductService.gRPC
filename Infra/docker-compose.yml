@@ -8,15 +8,26 @@ services:
       - "4566:4566"
       - "4510-4559:4510-4559"  # Servicios externos
     environment:
-      - SERVICES=sqs,sns,s3,lambda,iam,cloudwatch,logs,sts
+      - SERVICES=sqs,sns,s3,lambda,iam,cloudwatch,logs,sts,apigateway
+      # DEBUG para troubleshooting
       - DEBUG=1
+      # CRITICAL: Executor en modo Docker
       - LAMBDA_EXECUTOR=docker-reuse
+      # CRITICAL: Docker socket para ejecutar Lambdas
       - DOCKER_HOST=unix:///var/run/docker.sock
       - LAMBDA_REMOTE_DOCKER=0
       - PERSISTENCE=0
       - AWS_DEFAULT_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
+      # CRITICAL: Network para que Lambdas accedan a otros servicios
+      - LAMBDA_DOCKER_NETWORK=infra_microservices-network
+      # No remover contenedores inmediatamente (útil para debug)
+      - LAMBDA_REMOVE_CONTAINERS=false
+      # Mantener Lambdas "warm" (reduce cold starts en desarrollo)
+      - LAMBDA_STAY_OPEN_MODE=1
+      # ✅ Timeout para Lambda runtime
+      - LAMBDA_RUNTIME_ENVIRONMENT_TIMEOUT=30      
     volumes:
       - "localstack-data:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
