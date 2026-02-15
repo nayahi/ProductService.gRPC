@@ -1,0 +1,80 @@
+{
+  "realm": "ecommerce",
+  "enabled": true,
+  "displayName": "E-Commerce Microservices",
+  "sslRequired": "none",
+  "roles": {
+    "realm": [
+      {
+        "name": "report-viewer",
+        "description": "Puede solicitar generación de reportes"
+      },
+      {
+        "name": "admin",
+        "description": "Administrador del sistema"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "reports-service",
+      "name": "Reports Lambda Service",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "reports-secret-2026",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "defaultClientScopes": ["openid", "profile"],
+      "optionalClientScopes": []
+    },
+    {
+      "clientId": "web-app",
+      "name": "Web Application",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "webapp-secret-2026",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "redirectUris": ["http://localhost:5000/*"],
+      "webOrigins": ["http://localhost:5000"],
+      "defaultClientScopes": ["openid", "profile", "email"]
+    }
+  ],
+  "users": [
+    {
+      "username": "docente",
+      "enabled": true,
+      "firstName": "Docente",
+      "lastName": "CPIC",
+      "email": "docente@cpic.or",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "docente123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["report-viewer", "admin"]
+    },
+    {
+      "username": "estudiante",
+      "enabled": true,
+      "firstName": "Estudiante",
+      "lastName": "CPIC",
+      "email": "estudiante@cpic.or",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "estudiante123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["report-viewer"]
+    }
+  ]
+}

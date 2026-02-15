@@ -1,6 +1,21 @@
 version: '3.8'
 
 services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: keycloak
+    command: start-dev --import-realm
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import
+    networks:
+      - microservices-network
+    restart: unless-stopped
+    
   localstack:
     image: localstack/localstack:latest
     container_name: localstack-aws
@@ -8,7 +23,7 @@ services:
       - "4566:4566"
       - "4510-4559:4510-4559"  # Servicios externos
     environment:
-      - SERVICES=sqs,sns,s3,lambda,iam,cloudwatch,logs,sts,apigateway
+      - SERVICES=sqs,sns,s3,lambda,iam,cloudwatch,logs,sts,apigateway,secretsmanager
       # DEBUG para troubleshooting
       - DEBUG=1
       # CRITICAL: Executor en modo Docker
